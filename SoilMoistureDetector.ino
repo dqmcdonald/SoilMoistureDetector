@@ -23,13 +23,18 @@
 #include "LowPower.h"
 #include <SPI.h>
 #include <RH_RF95.h>
+#include <stdlib.h>
 
 #include <EEPROM.h>
 
-
+#define NUM_SLEEPS 38
 #define POWER_PIN 5
 #define SENSOR_PIN A0
 #define NUM_SAMPLES 10   // Average 10 samples
+#define NUM_SLEEPS 38    // 38 sleeps of 8 seconds each gives us about
+// a reading each five minutes.
+
+
 
 #define RFM95_CS 10  // Clock select should be on 10
 #define RFM95_RST 9  // Reset on 9
@@ -125,7 +130,7 @@ void setup() {
   Serial.begin(9600);
   delay(100);
 
-  Serial.println("Rat Trap Sensor");
+  Serial.println("Soil Moisture Detector");
 
   configureID();
 
@@ -138,17 +143,93 @@ void setup() {
 
 
 
-
 void loop() {
 
-  Serial.println(readSoil());
+  Serial.println("About to sleep");
+  Serial.flush();
 
-  delay(5000); // wait 5 seconds
+  rf95.sleep();
+
+  // Can only sleep for 8 seconds but do it enough time to do it
+  // for a total of five minutes
+  for ( int i = 0; i < NUM_SLEEPS; i++ ) {
+    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+  }
+
+  int value = readSoil();
+
+  rf95.setModeIdle();
+
+  delay(1000);
+
+  setupLoRa();
+
+  char radiopacket[20] = "SM:        ";
+
+  memcpy( radiopacket + 4, id, 6 );
+  char str_value[6];
+  itoa( value, str_value, 10);
+  memcpy( radiopacket + 11, str_value, 6);
+
+  Serial.print("Sending "); Serial.println(radiopacket);
+
+  radiopacket[19] = 0;
+
+  for ( int attempt = 0; attempt < MAX_RETRIES; attempt++ ) {
+
+    Serial.print("Sending in attempt ");
+    Serial.print(attempt + 1, DEC);
+    Serial.print(" of ");
+    Serial.println(MAX_RETRIES, DEC);
+
+    delay(10);
+
+    long int send_time = millis();
+    rf95.send((uint8_t *)radiopacket, 20);
+
+
+    Serial.println("Waiting for packet to complete...");
+    delay(10);
+
+
+    rf95.waitPacketSent();
+
+    Serial.print("Time to send (ms) = ");
+    Serial.println(millis() - send_time);
+
+
+    // Now wait for a reply
+    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+    uint8_t len = sizeof(buf);
+    Serial.println("Waiting for reply..."); delay(100);
+    if (rf95.waitAvailableTimeout(4000))
+    {
+      // Should be a reply message for us now
+      if (rf95.recv(buf, &len))
+      {
+        Serial.print("Got reply: ");
+        Serial.println((char*)buf);
+        Serial.print("RSSI: ");
+        Serial.println(rf95.lastRssi(), DEC);
+        break;
+      }
+      else
+      {
+        Serial.println("Receive failed");
+      }
+    }
+    else
+    {
+      Serial.println("No reply, is there a listener around?");
+    }
+
+    delay(1000);
+
+  }
 
 }
 
 int readSoil() {
-  int value = 0;
   int sum = 0;
   int i;
 
