@@ -9,33 +9,56 @@
 
   Pin Assignments:
      3 -> LoRa DOI0
-     5 -> Sensor Power
+     4 -> LED (Optional)
+     5 -> Moisture Sensor Power
+     6 -> Temperature Sensor Power
+     7 -> Teperature Sensor Pin
      9 -> LoRa Reset
     10 -> LoRa Clock Select (NSS)
     11 -> LoRa MISO
     12 -> LoRa MOSI
     13 -> LoRa SCK
+    A0 -> Moisture Sensor Pin
 
   Quentin McDonald
   May 2020
 */
 
+// comment out the next line to exclude temperature sensing
+#define INCLUDE_TEMPERATURE 1
+
+// comment out the next line to exclude LoRa etup transmission
+#define INCLUDE_LORA 1
+
+
+
 #include "LowPower.h"
+#ifdef INCLUDE_LORA
 #include <SPI.h>
 #include <RH_RF95.h>
-#include <stdlib.h>
+#endif
 
+#include <stdlib.h>
+#ifdef INCLUDE_TEMPERATURE
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#endif
 #include <EEPROM.h>
 
-#define NUM_SLEEPS 38
-#define POWER_PIN 5
-#define SENSOR_PIN A0
+
+
+
+#define MOISTURE_SENSOR_POWER_PIN 5
+#define TEMPERATURE_SENSOR_POWER_PIN 6
+#define TEMPERATURE_SENSOR_PIN 7
+#define MOISTURE_SENSOR_PIN A0
 #define NUM_SAMPLES 10   // Average 10 samples
 #define NUM_SLEEPS 38    // 38 sleeps of 8 seconds each gives us about
 // a reading each five minutes.
 
+const int OPT_LED_PIN = 4;
 
-
+#ifdef INCLUDE_LORA
 #define RFM95_CS 10  // Clock select should be on 10
 #define RFM95_RST 9  // Reset on 9
 #define RFM95_INT 3  // Interrupt on 3
@@ -46,11 +69,20 @@
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
+#endif
+
 const int ID_LEN = 6;
 // The station ID
 char id[ID_LEN];
 
+void flashLED( int numflash, int on_time, int off_time );
+
 const int MAX_RETRIES = 3; // Try to send three times:
+
+#ifdef INCLUDE_TEMPERATURE
+OneWire oneWire(TEMPERATURE_SENSOR_PIN);
+DallasTemperature temp_sensors(&oneWire);
+#endif
 
 // If there is a serial connection then allow configuration of the
 // ID. The ID is a six character code which is stored in EEPROM
@@ -85,6 +117,9 @@ void configureID() {
 
 // Configure the LoRa radio
 void setupLoRa() {
+
+
+#ifdef INCLUDE_LORA
 
   pinMode(RFM95_RST, OUTPUT);
   digitalWrite(RFM95_RST, HIGH);
@@ -123,57 +158,31 @@ void setupLoRa() {
 
   // Set to slow speed for longer range
   rf95.setModemConfig(RH_RF95::Bw31_25Cr48Sf512);
+#endif
 }
 
-void setup() {
-  while (!Serial);
-  Serial.begin(9600);
-  delay(100);
+void sendData( int value, const char* code ) {
 
-  Serial.println("Soil Moisture Detector");
-
-  configureID();
-
-  setupLoRa();
-
-  pinMode( POWER_PIN, OUTPUT);
-  digitalWrite(POWER_PIN, LOW); // Start with power off
-
-}
-
-
-
-void loop() {
-
-  Serial.println("About to sleep");
-  Serial.flush();
-
-  rf95.sleep();
-
-  // Can only sleep for 8 seconds but do it enough time to do it
-  // for a total of five minutes
-  for ( int i = 0; i < NUM_SLEEPS; i++ ) {
-    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-  }
-
-  int value = readSoil();
-
+#ifdef INCLUDE_LORA
   rf95.setModeIdle();
 
   delay(1000);
 
   setupLoRa();
 
-  char radiopacket[20] = "SM:        ";
+  char radiopacket[20] = "XX:        ";
+  radiopacket[0] = code[0];
+  radiopacket[1] = code[1];
 
   memcpy( radiopacket + 4, id, 6 );
   char str_value[6];
   itoa( value, str_value, 10);
   memcpy( radiopacket + 11, str_value, 6);
 
-  Serial.print("Sending "); Serial.println(radiopacket);
 
   radiopacket[19] = 0;
+  Serial.print("Sending |"); Serial.print(radiopacket); Serial.println("|");
+
 
   for ( int attempt = 0; attempt < MAX_RETRIES; attempt++ ) {
 
@@ -222,10 +231,84 @@ void loop() {
     {
       Serial.println("No reply, is there a listener around?");
     }
-
     delay(1000);
 
+
   }
+#endif
+
+}
+
+
+
+void setup() {
+  pinMode(OPT_LED_PIN, OUTPUT);
+
+  while (!Serial);
+  Serial.begin(9600);
+  delay(100);
+
+  Serial.println("Soil Moisture Detector");
+
+  configureID();
+
+  setupLoRa();
+
+#ifdef INCLUDE_TEMPERATURE
+  temp_sensors.begin();
+#endif
+
+  flashLED( 5, 250, 50);
+
+
+  pinMode( MOISTURE_SENSOR_POWER_PIN, OUTPUT);
+  digitalWrite(MOISTURE_SENSOR_POWER_PIN, LOW); // Start with power off
+  pinMode( TEMPERATURE_SENSOR_POWER_PIN, OUTPUT);
+  digitalWrite(TEMPERATURE_SENSOR_POWER_PIN, LOW); // Start with power off
+
+}
+
+
+
+void loop() {
+
+  Serial.println("About to sleep");
+  Serial.flush();
+#ifdef INCLUDE_LORA
+  rf95.sleep();
+#endif
+
+  // Can only sleep for 8 seconds but do it enough time to do it
+  // for a total of five minutes
+  for ( int i = 0; i < NUM_SLEEPS; i++ ) {
+    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+  }
+
+  Serial.println("Waking up");
+  Serial.flush();
+
+  int moisture = readSoil();
+  Serial.print("Soil Moisture is: ");
+  Serial.println(moisture);
+
+#ifdef INCLUDE_TEMPERATURE
+  float temperature = readTemperature();
+  Serial.print("Soil temperature is: ");
+  Serial.println(temperature);
+  int tempInt = int(temperature*100);
+  
+#endif
+
+#ifdef INCLUDE_LORA
+
+  sendData( moisture, "MS");
+
+#ifdef INCLUDE_TEMPERATURE
+  sendData( tempInt, "TP");
+#endif
+
+#endif
+  flashLED( 5, 400, 100);
 
 }
 
@@ -233,14 +316,47 @@ int readSoil() {
   int sum = 0;
   int i;
 
-  digitalWrite(POWER_PIN, HIGH);
+  digitalWrite(MOISTURE_SENSOR_POWER_PIN, HIGH);
 
   for ( i = 0; i < NUM_SAMPLES; i++ ) {
     delay(10);
-    sum += analogRead( SENSOR_PIN);
+    sum += analogRead( MOISTURE_SENSOR_PIN);
   }
-  digitalWrite(POWER_PIN, LOW);
+  digitalWrite(MOISTURE_SENSOR_POWER_PIN, LOW);
 
   return int(sum / NUM_SAMPLES);
 
+}
+
+#ifdef INCLUDE_TEMPERATURE
+float readTemperature() {
+  float sum = 0.0;
+
+  int i;
+
+
+
+  digitalWrite(TEMPERATURE_SENSOR_POWER_PIN, HIGH);
+  delay(1000);
+  for ( i = 0; i < NUM_SAMPLES; i++ ) {
+    temp_sensors.requestTemperatures();
+    delay(10);
+    sum += temp_sensors.getTempCByIndex(0);
+  }
+
+  digitalWrite(TEMPERATURE_SENSOR_POWER_PIN, LOW);
+  return float(sum / NUM_SAMPLES);
+}
+#endif
+
+
+void flashLED( int numflash, int on_time, int off_time ) {
+  // Flash the builtin LED numflash times with on_time and off_time between each one
+  int i;
+  for ( i = 0; i < numflash; i++) {
+    digitalWrite(OPT_LED_PIN, HIGH);
+    delay(on_time);
+    digitalWrite(OPT_LED_PIN, LOW);
+    delay(off_time);
+  }
 }
