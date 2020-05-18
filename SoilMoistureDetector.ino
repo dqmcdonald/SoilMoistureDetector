@@ -53,8 +53,8 @@
 #define TEMPERATURE_SENSOR_PIN 7
 #define MOISTURE_SENSOR_PIN A0
 #define NUM_SAMPLES 10   // Average 10 samples
-#define NUM_SLEEPS 38    // 38 sleeps of 8 seconds each gives us about
-// a reading each five minutes.
+#define NUM_SLEEPS 113    // 113 sleeps of 8 seconds each gives us about
+// a reading each 15 minutes.
 
 const int OPT_LED_PIN = 4;
 
