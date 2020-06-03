@@ -11,8 +11,8 @@
      3 -> LoRa DOI0
      4 -> LED (Optional)
      5 -> Moisture Sensor Power
-     6 -> Temperature Sensor Power
-     7 -> Teperature Sensor Pin
+     6 -> Temperature Sensor Power (Optional)
+     7 -> Teperature Sensor Pin (Optional)
      9 -> LoRa Reset
     10 -> LoRa Clock Select (NSS)
     11 -> LoRa MISO
@@ -25,7 +25,7 @@
 */
 
 // comment out the next line to exclude temperature sensing
-#define INCLUDE_TEMPERATURE 1
+//#define INCLUDE_TEMPERATURE 1
 
 // comment out the next line to exclude LoRa etup transmission
 #define INCLUDE_LORA 1
@@ -53,7 +53,7 @@
 #define TEMPERATURE_SENSOR_PIN 7
 #define MOISTURE_SENSOR_PIN A0
 #define NUM_SAMPLES 10   // Average 10 samples
-#define NUM_SLEEPS 113    // 113 sleeps of 8 seconds each gives us about
+#define NUM_SLEEPS 113   // 113 sleeps of 8 seconds each gives us about
 // a reading each 15 minutes.
 
 const int OPT_LED_PIN = 4;
@@ -279,7 +279,7 @@ void loop() {
 #endif
 
   // Can only sleep for 8 seconds but do it enough time to do it
-  // for a total of five minutes
+  // for a total of 15 minutes
   for ( int i = 0; i < NUM_SLEEPS; i++ ) {
     LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
   }
@@ -295,8 +295,8 @@ void loop() {
   float temperature = readTemperature();
   Serial.print("Soil temperature is: ");
   Serial.println(temperature);
-  int tempInt = int(temperature*100);
-  
+  int tempInt = int(temperature * 100);
+
 #endif
 
 #ifdef INCLUDE_LORA
@@ -317,9 +317,9 @@ int readSoil() {
   int i;
 
   digitalWrite(MOISTURE_SENSOR_POWER_PIN, HIGH);
-
+  delay(100);
   for ( i = 0; i < NUM_SAMPLES; i++ ) {
-    delay(10);
+    delay(100);
     sum += analogRead( MOISTURE_SENSOR_PIN);
   }
   digitalWrite(MOISTURE_SENSOR_POWER_PIN, LOW);
@@ -331,21 +331,27 @@ int readSoil() {
 #ifdef INCLUDE_TEMPERATURE
 float readTemperature() {
   float sum = 0.0;
-
+  int cnt = 0;
   int i;
-
-
 
   digitalWrite(TEMPERATURE_SENSOR_POWER_PIN, HIGH);
   delay(1000);
+  temp_sensors.begin();
+  delay(2000);
   for ( i = 0; i < NUM_SAMPLES; i++ ) {
     temp_sensors.requestTemperatures();
-    delay(10);
-    sum += temp_sensors.getTempCByIndex(0);
+    delay(1000);
+    float val = temp_sensors.getTempCByIndex(0);
+    Serial.print("Temp reading = ");
+    Serial.println(val);
+    if ( val < 80.0 ) {
+      cnt++;
+      sum += val;
+    }
   }
 
   digitalWrite(TEMPERATURE_SENSOR_POWER_PIN, LOW);
-  return float(sum / NUM_SAMPLES);
+  return float(sum / cnt);
 }
 #endif
 
