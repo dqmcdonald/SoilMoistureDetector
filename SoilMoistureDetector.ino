@@ -18,11 +18,17 @@
     11 -> LoRa MISO
     12 -> LoRa MOSI
     13 -> LoRa SCK
-    A0 -> Moisture Sensor Pin
+    A4 -> Moisture Sensor SDA
+    A5 -> Moisture Sensor SCL
 
   Quentin McDonald
   May 2020
+  Converted to Adafruit Capacative Sensor - June 2024
 */
+
+#include "Adafruit_seesaw.h"
+
+Adafruit_seesaw ss;
 
 // comment out the next line to exclude temperature sensing
 //#define INCLUDE_TEMPERATURE 1
@@ -51,9 +57,12 @@
 #define MOISTURE_SENSOR_POWER_PIN 5
 #define TEMPERATURE_SENSOR_POWER_PIN 6
 #define TEMPERATURE_SENSOR_PIN 7
-#define MOISTURE_SENSOR_PIN A0
+
+
 #define NUM_SAMPLES 10   // Average 10 samples
-#define NUM_SLEEPS 113   // 113 sleeps of 8 seconds each gives us about
+//#define NUM_SLEEPS 113   // 113 sleeps of 8 seconds each gives us about
+#define NUM_SLEEPS 3   // 113 sleeps of 8 seconds each gives us about
+
 // a reading each 15 minutes.
 
 const int OPT_LED_PIN = 4;
@@ -73,7 +82,7 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT);
 
 const int ID_LEN = 6;
 // The station ID
-char id[ID_LEN];
+char id[ID_LEN + 1];
 
 void flashLED( int numflash, int on_time, int off_time );
 
@@ -109,7 +118,7 @@ void configureID() {
   for (  i = 0; i < ID_LEN; i++ ) {
     id[i] = EEPROM.read(i);
   }
-
+  id[ID_LEN] = '\0';
   Serial.print("Using station ID:" );
   Serial.println(id);
 
@@ -122,17 +131,17 @@ void setupLoRa() {
 #ifdef INCLUDE_LORA
 
   pinMode(RFM95_RST, OUTPUT);
-  digitalWrite(RFM95_RST, HIGH);
-
+  
 
 
   Serial.println("Initializing LoRa radio");
 
   // manual reset
+  
   digitalWrite(RFM95_RST, LOW);
-  delay(10);
+  delay(20);
   digitalWrite(RFM95_RST, HIGH);
-  delay(10);
+  delay(20);
 
   while (!rf95.init()) {
     Serial.println("LoRa radio init failed");
@@ -180,7 +189,7 @@ void sendData( int value, const char* code ) {
   memcpy( radiopacket + 11, str_value, 6);
 
 
-  radiopacket[19] = 0;
+  radiopacket[19] = '\0';
   Serial.print("Sending |"); Serial.print(radiopacket); Serial.println("|");
 
 
@@ -320,7 +329,8 @@ int readSoil() {
   delay(100);
   for ( i = 0; i < NUM_SAMPLES; i++ ) {
     delay(100);
-    sum += analogRead( MOISTURE_SENSOR_PIN);
+    uint16_t capread = ss.touchRead(0);
+    sum += capread;
   }
   digitalWrite(MOISTURE_SENSOR_POWER_PIN, LOW);
 
