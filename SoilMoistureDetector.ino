@@ -8,6 +8,7 @@
    Intended to work on 3.3V Arduino Mini Pro
 
   Pin Assignments:
+     2 -> Hardware reset - wired with jumper to hardware reset pin
      3 -> LoRa DOI0
      4 -> LED (Optional)
      5 -> Moisture Sensor Power
@@ -26,16 +27,16 @@
   Converted to Adafruit Capacative Sensor - June 2024
 */
 
+
 #include "Adafruit_seesaw.h"
 
-Adafruit_seesaw ss;
+
 
 // comment out the next line to exclude temperature sensing
 //#define INCLUDE_TEMPERATURE 1
 
 // comment out the next line to exclude LoRa etup transmission
 #define INCLUDE_LORA 1
-
 
 
 #include "LowPower.h"
@@ -52,16 +53,17 @@ Adafruit_seesaw ss;
 #include <EEPROM.h>
 
 
-
+#define RESET_PIN 2
 
 #define MOISTURE_SENSOR_POWER_PIN 5
 #define TEMPERATURE_SENSOR_POWER_PIN 6
 #define TEMPERATURE_SENSOR_PIN 7
 
+Adafruit_seesaw ss;
 
-#define NUM_SAMPLES 10   // Average 10 samples
-//#define NUM_SLEEPS 113   // 113 sleeps of 8 seconds each gives us about
-#define NUM_SLEEPS 3   // 113 sleeps of 8 seconds each gives us about
+#define NUM_SAMPLES 10  // Average 10 samples
+#define NUM_SLEEPS 113  // 113 sleeps of 8 seconds each gives us about 15 minutes
+//#define NUM_SLEEPS 2  // 2 sleeps of 8 seconds each gives us about 16 seconds
 
 // a reading each 15 minutes.
 
@@ -84,9 +86,9 @@ const int ID_LEN = 6;
 // The station ID
 char id[ID_LEN + 1];
 
-void flashLED( int numflash, int on_time, int off_time );
+void flashLED(int numflash, int on_time, int off_time);
 
-const int MAX_RETRIES = 3; // Try to send three times:
+const int MAX_RETRIES = 3;  // Try to send three times:
 
 #ifdef INCLUDE_TEMPERATURE
 OneWire oneWire(TEMPERATURE_SENSOR_PIN);
@@ -97,31 +99,30 @@ DallasTemperature temp_sensors(&oneWire);
 // ID. The ID is a six character code which is stored in EEPROM
 void configureID() {
 
-  Serial.setTimeout(10000); // Will wait 10 seconds for input
+  Serial.setTimeout(10000);  // Will wait 10 seconds for input
   Serial.println("To configure ID enter 'y'");
 
   char answer;
   int i;
 
   int bytes_read = Serial.readBytes(&answer, 1);
-  if ( bytes_read == 1 && answer == 'y') {
+  if (bytes_read == 1 && answer == 'y') {
     Serial.println("Enter six character ID");
     bytes_read = Serial.readBytes(id, 6);
-    if ( bytes_read == 6 ) {
+    if (bytes_read == 6) {
       Serial.print("Id = ");
       Serial.println(id);
-      for (  i = 0; i < ID_LEN; i++ ) {
+      for (i = 0; i < ID_LEN; i++) {
         EEPROM.write(i, id[i]);
       }
     }
   }
-  for (  i = 0; i < ID_LEN; i++ ) {
+  for (i = 0; i < ID_LEN; i++) {
     id[i] = EEPROM.read(i);
   }
   id[ID_LEN] = '\0';
-  Serial.print("Using station ID:" );
+  Serial.print("Using station ID:");
   Serial.println(id);
-
 }
 
 // Configure the LoRa radio
@@ -131,13 +132,13 @@ void setupLoRa() {
 #ifdef INCLUDE_LORA
 
   pinMode(RFM95_RST, OUTPUT);
-  
+
 
 
   Serial.println("Initializing LoRa radio");
 
   // manual reset
-  
+
   digitalWrite(RFM95_RST, LOW);
   delay(20);
   digitalWrite(RFM95_RST, HIGH);
@@ -145,17 +146,20 @@ void setupLoRa() {
 
   while (!rf95.init()) {
     Serial.println("LoRa radio init failed");
-    while (1);
+    while (1)
+      ;
   }
 
   Serial.println("LoRa radio init OK");
   // Defaults after init are 434.0MHz, modulation GFSK_Rb250Fd250, +13dbM
   if (!rf95.setFrequency(RF95_FREQ)) {
     Serial.println("setFrequency failed");
-    while (1);
+    while (1)
+      ;
   }
 
-  Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
+  Serial.print("Set Freq to: ");
+  Serial.println(RF95_FREQ);
 
 
   // Defaults after init are 434.0MHz, 13dBm, Bw = 125 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on
@@ -170,7 +174,7 @@ void setupLoRa() {
 #endif
 }
 
-void sendData( int value, const char* code ) {
+void sendData(int value, const char* code) {
 
 #ifdef INCLUDE_LORA
   rf95.setModeIdle();
@@ -183,17 +187,19 @@ void sendData( int value, const char* code ) {
   radiopacket[0] = code[0];
   radiopacket[1] = code[1];
 
-  memcpy( radiopacket + 4, id, 6 );
+  memcpy(radiopacket + 4, id, 6);
   char str_value[6];
-  itoa( value, str_value, 10);
-  memcpy( radiopacket + 11, str_value, 6);
+  itoa(value, str_value, 10);
+  memcpy(radiopacket + 11, str_value, 6);
 
 
   radiopacket[19] = '\0';
-  Serial.print("Sending |"); Serial.print(radiopacket); Serial.println("|");
+  Serial.print("Sending |");
+  Serial.print(radiopacket);
+  Serial.println("|");
 
 
-  for ( int attempt = 0; attempt < MAX_RETRIES; attempt++ ) {
+  for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
 
     Serial.print("Sending in attempt ");
     Serial.print(attempt + 1, DEC);
@@ -203,7 +209,7 @@ void sendData( int value, const char* code ) {
     delay(10);
 
     long int send_time = millis();
-    rf95.send((uint8_t *)radiopacket, 20);
+    rf95.send((uint8_t*)radiopacket, 20);
 
 
     Serial.println("Waiting for packet to complete...");
@@ -219,45 +225,51 @@ void sendData( int value, const char* code ) {
     // Now wait for a reply
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
-    Serial.println("Waiting for reply..."); delay(100);
-    if (rf95.waitAvailableTimeout(4000))
-    {
+    Serial.println("Waiting for reply...");
+    delay(100);
+    if (rf95.waitAvailableTimeout(4000)) {
       // Should be a reply message for us now
-      if (rf95.recv(buf, &len))
-      {
+      if (rf95.recv(buf, &len)) {
         Serial.print("Got reply: ");
         Serial.println((char*)buf);
         Serial.print("RSSI: ");
         Serial.println(rf95.lastRssi(), DEC);
         break;
-      }
-      else
-      {
+      } else {
         Serial.println("Receive failed");
       }
-    }
-    else
-    {
+    } else {
       Serial.println("No reply, is there a listener around?");
     }
     delay(1000);
-
-
   }
 #endif
-
 }
 
 
 
 void setup() {
+  digitalWrite(RESET_PIN, HIGH);
+  pinMode(RESET_PIN,OUTPUT);
   pinMode(OPT_LED_PIN, OUTPUT);
 
-  while (!Serial);
+  while (!Serial)
+    ;
   Serial.begin(9600);
   delay(100);
 
   Serial.println("Soil Moisture Detector");
+
+  pinMode(MOISTURE_SENSOR_POWER_PIN, OUTPUT);
+  digitalWrite(MOISTURE_SENSOR_POWER_PIN, LOW);  // Start with power off
+  pinMode(TEMPERATURE_SENSOR_POWER_PIN, OUTPUT);
+  digitalWrite(TEMPERATURE_SENSOR_POWER_PIN, LOW);  // Start with power off
+
+  digitalWrite(MOISTURE_SENSOR_POWER_PIN, HIGH);  
+  if (!ss.begin(0x36, -1,false)) {
+    Serial.println("ERROR! sensor not found");
+  }
+
 
   configureID();
 
@@ -266,39 +278,21 @@ void setup() {
 #ifdef INCLUDE_TEMPERATURE
   temp_sensors.begin();
 #endif
+  
+  flashLED(5, 250, 50);
 
-  flashLED( 5, 250, 50);
 
-
-  pinMode( MOISTURE_SENSOR_POWER_PIN, OUTPUT);
-  digitalWrite(MOISTURE_SENSOR_POWER_PIN, LOW); // Start with power off
-  pinMode( TEMPERATURE_SENSOR_POWER_PIN, OUTPUT);
-  digitalWrite(TEMPERATURE_SENSOR_POWER_PIN, LOW); // Start with power off
-
+  
 }
 
 
 
 void loop() {
 
-  Serial.println("About to sleep");
-  Serial.flush();
-#ifdef INCLUDE_LORA
-  rf95.sleep();
-#endif
+  
 
-  // Can only sleep for 8 seconds but do it enough time to do it
-  // for a total of 15 minutes
-  for ( int i = 0; i < NUM_SLEEPS; i++ ) {
-    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-  }
 
-  Serial.println("Waking up");
-  Serial.flush();
 
-  int moisture = readSoil();
-  Serial.print("Soil Moisture is: ");
-  Serial.println(moisture);
 
 #ifdef INCLUDE_TEMPERATURE
   float temperature = readTemperature();
@@ -308,34 +302,62 @@ void loop() {
 
 #endif
 
+  int moisture = readSoil();
+  Serial.print("Soil Moisture is: ");
+  Serial.println(moisture);
+
+
 #ifdef INCLUDE_LORA
 
-  sendData( moisture, "MS");
+  sendData(moisture, "MS");
 
 #ifdef INCLUDE_TEMPERATURE
-  sendData( tempInt, "TP");
+  sendData(tempInt, "TP");
 #endif
 
 #endif
-  flashLED( 5, 400, 100);
+  flashLED(5, 400, 100);
 
+
+Serial.println("About to sleep");
+  Serial.flush();
+#ifdef INCLUDE_LORA
+  rf95.sleep();
+#endif
+
+  // Can only sleep for 8 seconds but do it enough time to do it
+  // for a total of 15 minutes
+  for (int i = 0; i < NUM_SLEEPS; i++) {
+    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+  }
+
+  delay(1000);
+  Serial.println("Waking up");
+  Serial.flush();
+  delay(1000);
+  digitalWrite(RESET_PIN,LOW);
 }
 
 int readSoil() {
+
   int sum = 0;
   int i;
 
   digitalWrite(MOISTURE_SENSOR_POWER_PIN, HIGH);
   delay(100);
-  for ( i = 0; i < NUM_SAMPLES; i++ ) {
+  Serial.println("Reading soil moisture");
+
+
+  for (i = 0; i < NUM_SAMPLES; i++) {
     delay(100);
     uint16_t capread = ss.touchRead(0);
+    Serial.print("Soil moisture reading is: ");
+    Serial.println(capread);
     sum += capread;
   }
   digitalWrite(MOISTURE_SENSOR_POWER_PIN, LOW);
 
   return int(sum / NUM_SAMPLES);
-
 }
 
 #ifdef INCLUDE_TEMPERATURE
@@ -348,13 +370,13 @@ float readTemperature() {
   delay(1000);
   temp_sensors.begin();
   delay(2000);
-  for ( i = 0; i < NUM_SAMPLES; i++ ) {
+  for (i = 0; i < NUM_SAMPLES; i++) {
     temp_sensors.requestTemperatures();
     delay(1000);
     float val = temp_sensors.getTempCByIndex(0);
     Serial.print("Temp reading = ");
     Serial.println(val);
-    if ( val < 80.0 ) {
+    if (val < 80.0) {
       cnt++;
       sum += val;
     }
@@ -366,13 +388,14 @@ float readTemperature() {
 #endif
 
 
-void flashLED( int numflash, int on_time, int off_time ) {
+void flashLED(int numflash, int on_time, int off_time) {
   // Flash the builtin LED numflash times with on_time and off_time between each one
   int i;
-  for ( i = 0; i < numflash; i++) {
+  for (i = 0; i < numflash; i++) {
     digitalWrite(OPT_LED_PIN, HIGH);
     delay(on_time);
     digitalWrite(OPT_LED_PIN, LOW);
     delay(off_time);
   }
 }
+
